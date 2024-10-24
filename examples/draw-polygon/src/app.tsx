@@ -6,7 +6,7 @@ import Map from 'react-map-gl';
 import DrawControl from './draw-control';
 import ControlPanel from './control-panel';
 
-const TOKEN = ''; // Set your mapbox token here
+const TOKEN = 'pk.eyJ1IjoidWJlcmRhdGEiLCJhIjoiY2pwY3owbGFxMDVwNTNxcXdwMms2OWtzbiJ9.1PPVl0VLUQgqrosrI2nUhg'; // Set your mapbox token here
 
 export default function App() {
   const [features, setFeatures] = useState({});
@@ -35,11 +35,11 @@ export default function App() {
     <>
       <Map
         initialViewState={{
-          longitude: -91.874,
-          latitude: 42.76,
+          longitude: 77.664808,
+          latitude: 12.9136484,
           zoom: 12
         }}
-        mapStyle="mapbox://styles/mapbox/satellite-v9"
+        mapStyle="mapbox://styles/mapbox/dark-v9"
         mapboxAccessToken={TOKEN}
       >
         <DrawControl
