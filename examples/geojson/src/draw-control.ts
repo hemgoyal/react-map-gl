@@ -1,6 +1,7 @@
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import { useControl } from 'react-map-gl';
 import * as turf from "@turf/turf";
+import { useEffect, useRef } from 'react';
 
 import type {ControlPosition} from 'react-map-gl';
 
@@ -10,9 +11,13 @@ type DrawControlProps = ConstructorParameters<typeof MapboxDraw>[0] & {
   onCreate?: (evt: {features: object[]}) => void;
   onUpdate?: (evt: {features: object[]; action: string}) => void;
   onDelete?: (evt: {features: object[]}) => void;
+  splittedBoundaries: object[];
+  allData: object[];
 };
 
 export default function DrawControl(props: DrawControlProps) {
+  const drawRef = useRef<MapboxDraw | null>(null);
+
   const getBoundary = (polygon, line, direction, id, properties) => {
     try {
       const polyCoords = [];
@@ -69,12 +74,12 @@ export default function DrawControl(props: DrawControlProps) {
     }
   };
 
-  const handleSplit = (lineFeature) => {
+  const handleSplit = (lineFeature, splittedBoundaries, allData) => {
     try {
-      console.log("draw: ", draw);
+      // console.log("draw: ", draw);
       // Ensure the drawn line is of type 'LineString'
       if (lineFeature.geometry.type !== "LineString") {
-        draw.delete(lineFeature.id);
+        drawRef.current?.delete(lineFeature.id);
         alert("The feature must be a LineString. Deleting...");
         return;
       }
@@ -87,7 +92,7 @@ export default function DrawControl(props: DrawControlProps) {
       let intersectingFeature = null;
 
       // Check against splittedBoundaries first, fallback to original allData
-      const featuresToCheck = props.allData;
+      const featuresToCheck = splittedBoundaries.length > 0 ? splittedBoundaries : allData;
 
       // Loop through all features and find which polygon the line intersects
       for (const feature of featuresToCheck) {
@@ -114,7 +119,7 @@ export default function DrawControl(props: DrawControlProps) {
 
       // If no intersecting polygon was found, alert the user
       if (!intersectingFeature) {
-        draw.delete(lineFeature.id);
+        drawRef.current?.delete(lineFeature.id);
         alert("The line does not intersect any polygon boundary. Try drawing a line across the polygon. Deleting...");
         return;
       }
@@ -140,12 +145,12 @@ export default function DrawControl(props: DrawControlProps) {
       // const split = turf.lineSplit(line, polygon);
       // const features = split.features;
       if (!upperPolygon || !lowerPolygon) {
-        draw.delete(lineFeature.id);
+        drawRef.current?.delete(lineFeature.id);
         alert("Error while splitting the boundary. Please retry.");
         return;
       }
       const updatedBoundaries = [
-        ...props.splittedBoundaries.filter((f) => f !== intersectingFeature),
+        ...splittedBoundaries.filter((f) => f !== intersectingFeature),
         upperPolygon,
         lowerPolygon
       ];
@@ -159,7 +164,7 @@ export default function DrawControl(props: DrawControlProps) {
       //   alert("Line does not split the boundary");
       // }
     } catch (error) {
-      draw.delete(lineFeature.id);
+      drawRef.current?.delete(lineFeature.id);
       console.error("Error while splitting the boundary:", error);
     }
   };
@@ -172,11 +177,12 @@ export default function DrawControl(props: DrawControlProps) {
       ...props
     }),
     ({map}) => {
+      drawRef.current = draw;
       map.on('draw.create', (e) => {
         const drawnFeature = e.features[0];
-
+        console.log("props: ", props);
         if (drawnFeature.geometry.type === "LineString") {
-          handleSplit(drawnFeature);
+          handleSplit(drawnFeature, props.splittedBoundaries, props.allData);
         } else {
           const inside = turf.booleanWithin(drawnFeature, props.allData);
 
@@ -201,6 +207,23 @@ export default function DrawControl(props: DrawControlProps) {
       position: props.position
     }
   );
+
+  // UseEffect to handle prop updates (like splittedBoundaries, allData)
+  useEffect(() => {
+    if (!drawRef.current) return;
+
+    const drawInstance = drawRef.current;
+
+    // If you need to update specific properties of the draw instance
+    drawInstance.set({
+      modes: {
+        ...MapboxDraw.modes,
+        // You can add custom modes here if required
+      },
+    });
+
+    // Re-attach event listeners or do other updates as needed
+  }, [props.splittedBoundaries, props.allData, props.onCreate, props.onUpdate, props.onDelete]);
 
   return null;
 }

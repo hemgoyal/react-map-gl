@@ -1,15 +1,18 @@
 import * as React from 'react';
-import {useState, useEffect, useCallback, useRef} from 'react';
-import {createRoot} from 'react-dom/client';
-import Map, {Source, Layer, NavigationControl, Popup} from 'react-map-gl';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createRoot } from 'react-dom/client';
+import Map, { Source, Layer, NavigationControl, Popup } from 'react-map-gl';
 import * as turf from "@turf/turf";
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
 
 import DrawControl from './draw-control';
-import LegandTable from './legand-table';
+import LegandTable from './LegandTable';
 import SelectionComponent from './SelectionComponent';
 
 import MysuruGeoJson from "./Mysuru.json";
 import GorakhpurGeoJson from "./Gorakhpur.json";
+
+import { handleSplit } from "./utils";
 
 const MAPBOX_TOKEN = 'pk.eyJ1IjoidWJlcmRhdGEiLCJhIjoiY2pwY3owbGFxMDVwNTNxcXdwMms2OWtzbiJ9.1PPVl0VLUQgqrosrI2nUhg'; // Set your mapbox token here
 
@@ -27,6 +30,20 @@ export default function App() {
 
   const mapRef = useRef();
 
+  const draw = new MapboxDraw({
+    position: "top-left",
+    displayControlsDefault: false,
+    controls: {
+      line_string: true,
+      trash: true,
+      zoom_in: true,
+      simple_select: true,
+    },
+    modes: {
+      ...MapboxDraw.modes,
+    },
+  });
+
   const onHover = useCallback(event => {
     const {
       features,
@@ -39,8 +56,16 @@ export default function App() {
   }, []);
 
   const onSplit = (features) => {
-    console.log("features: ", features);
     setSplittedBoundaries(features);
+    for (const feature of features) {
+      draw.add(feature);
+    }
+    const allFeatues = draw.getAll();
+    for (const feature of allFeatues.features) {
+      if (feature.geometry.type === "LineString") {
+        draw.delete(feature.id);
+      }
+    }
   }
 
   const onUpdate = useCallback(e => {
@@ -53,14 +78,31 @@ export default function App() {
     });
   }, []);
 
+  const onCreate = (e) => {
+    const drawnFeature = e.features[0];
+
+    if (drawnFeature.geometry.type === "LineString") {
+      handleSplit({
+        lineFeature: drawnFeature,
+        draw: draw,
+        allData: allData.features,
+        onSplit
+      });
+    }
+  }
+
   const onDelete = useCallback(e => {
-    setFeatures(currFeatures => {
-      const newFeatures = {...currFeatures};
-      for (const f of e.features) {
-        delete newFeatures[f.id];
-      }
-      return newFeatures;
-    });
+    console.log("sdfdsfdsf: ", e);
+    // for (const f of e.features) {
+    //   draw.delete(f.id);
+    // }
+    // setFeatures(currFeatures => {
+    //   const newFeatures = {...currFeatures};
+    //   for (const f of e.features) {
+    //     delete newFeatures[f.id];
+    //   }
+    //   return newFeatures;
+    // });
   }, []);
   
   useEffect(() => {
@@ -111,6 +153,17 @@ export default function App() {
       });
     }
   }, []);
+
+  // console.log("mapRef: ", mapRef.current);
+
+  useEffect(() => {
+    if (!allData) return;
+
+    mapRef.current.addControl(draw, "top-left");
+
+    mapRef.current.on('draw.create', onCreate);
+    mapRef.current.on('draw.delete', onDelete);
+  }, [allData]);
 
   return (
     <Map
@@ -166,10 +219,14 @@ export default function App() {
         />
       </Source>
       {splittedBoundaries.length > 0 && (
-        <Source id="split-polygons" type="geojson" data={{
-          type: "FeatureCollection",
-          features: splittedBoundaries,
-        }}>
+        <Source
+          id="split-polygons"
+          type="geojson"
+          data={{
+            type: "FeatureCollection",
+            features: splittedBoundaries,
+          }}
+        >
           <Layer
             id="split-layer"
             type="fill"
@@ -195,10 +252,10 @@ export default function App() {
         </Source>
       )}
       <NavigationControl position="top-left" />
-      {
+      {/* {
         allData ? (
           <DrawControl
-            key={JSON.stringify(splittedBoundaries)}
+            // key={JSON.stringify(splittedBoundaries)}
             position="top-left"
             displayControlsDefault={false}
             controls={{
@@ -214,7 +271,7 @@ export default function App() {
             allData={allData.features}
           />
         ) : null
-      }
+      } */}
       {hoverInfo && (
         <div className="tooltip" style={{left: hoverInfo.x, top: hoverInfo.y}}>
           <div>Name: {hoverInfo.feature.properties.name}</div>
