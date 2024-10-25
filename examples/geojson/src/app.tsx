@@ -27,6 +27,7 @@ export default function App() {
   const [clickedInfo, setClickedInfo] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState([]);
+  const [isControlInitialized, setIsControlInitialized] = useState(false);
   const viewPort = {
     latitude: 12.9339351,
     longitude: 77.6709449,
@@ -35,6 +36,7 @@ export default function App() {
 
   const mapRef = useRef();
   const drawRef = useRef();
+  const allDataRef = useRef();
 
   useEffect(() => {
     if (drawRef.current) return;
@@ -181,7 +183,7 @@ export default function App() {
       handleSplit({
         lineFeature: drawnFeature,
         draw: drawRef.current,
-        allData: allData.features,
+        allData: allDataRef.current.features,
         onSplit
       });
     }
@@ -225,6 +227,10 @@ export default function App() {
   }, [splittedBoundaries]);
 
   const handleLoadMap = (value) => {
+    if (splittedBoundaries.length > 0) {
+      drawRef.current.deleteAll();
+      setSplittedBoundaries([]);
+    }
     /* global fetch */
     let geoJson = {};
     if (value === "mysuru") {
@@ -233,6 +239,7 @@ export default function App() {
       geoJson = GorakhpurGeoJson;
     }
     setAllData(geoJson);
+    allDataRef.current = geoJson;
     const bbox = turf.bbox(geoJson);
 
     // Set the map to fit the bounds of the geojson features
@@ -259,13 +266,14 @@ export default function App() {
   }, []);
 
   const onReset = () => {
-    // drawRef.current.deleteAll();
+    drawRef.current.deleteAll();
     setSplittedBoundaries([]);
   }
 
   useEffect(() => {
-    if (!allData) return;
+    if (!allData || isControlInitialized) return;
 
+    setIsControlInitialized(true);
     mapRef.current.addControl(drawRef.current, "top-left");
 
     mapRef.current.on('draw.create', onCreate);
@@ -382,7 +390,6 @@ export default function App() {
       {splittedBoundaries.length > 0 && (
         <ResetControl
           onReset={onReset}
-          draw={drawRef.current}
         />
       )}
     </Map>

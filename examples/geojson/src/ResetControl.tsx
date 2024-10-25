@@ -1,10 +1,9 @@
 import React from "react";
 
 export default function ResetControl(props) {
-  const { onReset, draw } = props;
+  const { onReset } = props;
 
   const handleReset = () => {
-    draw.deleteAll();
     onReset();
   };
 
