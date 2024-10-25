@@ -4,24 +4,29 @@ import { createRoot } from 'react-dom/client';
 import Map, { Source, Layer, NavigationControl, Popup } from 'react-map-gl';
 import * as turf from "@turf/turf";
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import { Modal, message } from 'antd';
 
 import DrawControl from './draw-control';
 import LegandTable from './LegandTable';
 import SelectionComponent from './SelectionComponent';
+import ResetControl from "./ResetControl";
 
 import MysuruGeoJson from "./Mysuru.json";
 import GorakhpurGeoJson from "./Gorakhpur.json";
 
 import { handleSplit } from "./utils";
 
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css'
+
 const MAPBOX_TOKEN = 'pk.eyJ1IjoidWJlcmRhdGEiLCJhIjoiY2pwY3owbGFxMDVwNTNxcXdwMms2OWtzbiJ9.1PPVl0VLUQgqrosrI2nUhg'; // Set your mapbox token here
 
 export default function App() {
   const [allData, setAllData] = useState(null);
   const [hoverInfo, setHoverInfo] = useState(null);
-  const [features, setFeatures] = useState({});
   const [splittedBoundaries, setSplittedBoundaries] = useState([]);
   const [clickedInfo, setClickedInfo] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedFeature, setSelectedFeature] = useState([]);
   const viewPort = {
     latitude: 12.9339351,
     longitude: 77.6709449,
@@ -29,20 +34,121 @@ export default function App() {
   };
 
   const mapRef = useRef();
+  const drawRef = useRef();
 
-  const draw = new MapboxDraw({
-    position: "top-left",
-    displayControlsDefault: false,
-    controls: {
-      line_string: true,
-      trash: true,
-      zoom_in: true,
-      simple_select: true,
-    },
-    modes: {
-      ...MapboxDraw.modes,
-    },
-  });
+  useEffect(() => {
+    if (drawRef.current) return;
+
+    drawRef.current = new MapboxDraw({
+      position: "top-left",
+      displayControlsDefault: false,
+      controls: {
+        line_string: true,
+        trash: true
+      },
+      modes: {
+        ...MapboxDraw.modes,
+        simple_select: {
+          ...MapboxDraw.modes.simple_select,
+          onDrag: () => {}
+        },
+        direct_select: {
+          ...MapboxDraw.modes.direct_select,
+          onVertex: () => {},
+          onMidpoint: () => {},
+          dragVertex: () => {},
+        }
+      },
+      styles: [
+        {
+          "id": "gl-draw-line",
+          "type": "line",
+          "filter": ["all", ["==", "$type", "LineString"]],
+          "layout": {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          "paint": {
+            "line-color": "#D20C0C",
+            "line-dasharray": [0.2, 2],
+            "line-width": 3
+          }
+        },
+        // polygon fill
+        {
+          "id": "gl-draw-polygon-fill",
+          "type": "fill",
+          "filter": ["all", ["==", "$type", "Polygon"]],
+          "paint": {
+            "fill-color": "#000",
+            "fill-outline-color": "#000",
+            "fill-opacity": 0.6
+          }
+        },
+        {
+          "id": "gl-draw-polygon-fill-selected",
+          "type": "fill",
+          "filter": [
+            "all",
+            ['==', 'active', 'true'],
+            ["==", "$type", "Polygon"]
+          ],
+          "paint": {
+            "fill-color": "#000",
+            "fill-outline-color": "#000",
+            "fill-opacity": 0.7
+          }
+        },
+        // polygon mid points
+        {
+          'id': 'gl-draw-polygon-midpoint',
+          'type': 'circle',
+          'filter': ['all',
+            ['==', '$type', 'Point'],
+            ['==', 'meta', 'midpoint']],
+          'paint': {
+            'circle-radius': 3,
+            'circle-color': '#fbb03b'
+          }
+        },
+        // polygon outline stroke
+        // This doesn't style the first edge of the polygon, which uses the line stroke styling instead
+        {
+          "id": "gl-draw-polygon-stroke-active",
+          "type": "line",
+          "filter": ["all", ["==", "$type", "Polygon"]],
+          "layout": {
+            "line-cap": "round",
+            "line-join": "round"
+          },
+          "paint": {
+            "line-color": "#fff",
+            "line-width": 3
+          }
+        },
+        // vertex point halos
+        {
+          "id": "gl-draw-polygon-and-line-vertex-halo-active",
+          "type": "circle",
+          "filter": ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"]],
+          "paint": {
+            "circle-radius": 5,
+            "circle-color": "#FFF"
+          }
+        },
+        // vertex points
+        {
+          "id": "gl-draw-polygon-and-line-vertex-active",
+          "type": "circle",
+          "filter": ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"]],
+          "paint": {
+            "circle-radius": 3,
+            "circle-color": "#000",
+          }
+        }
+      ]
+    });
+  }, []);
 
   const onHover = useCallback(event => {
     const {
@@ -58,25 +164,15 @@ export default function App() {
   const onSplit = (features) => {
     setSplittedBoundaries(features);
     for (const feature of features) {
-      draw.add(feature);
+      drawRef.current.add(feature);
     }
-    const allFeatues = draw.getAll();
+    const allFeatues = drawRef.current.getAll();
     for (const feature of allFeatues.features) {
       if (feature.geometry.type === "LineString") {
-        draw.delete(feature.id);
+        drawRef.current.delete(feature.id);
       }
     }
   }
-
-  const onUpdate = useCallback(e => {
-    setFeatures(currFeatures => {
-      const newFeatures = {...currFeatures};
-      for (const f of e.features) {
-        newFeatures[f.id] = f;
-      }
-      return newFeatures;
-    });
-  }, []);
 
   const onCreate = (e) => {
     const drawnFeature = e.features[0];
@@ -84,26 +180,34 @@ export default function App() {
     if (drawnFeature.geometry.type === "LineString") {
       handleSplit({
         lineFeature: drawnFeature,
-        draw: draw,
+        draw: drawRef.current,
         allData: allData.features,
         onSplit
       });
     }
   }
 
-  const onDelete = useCallback(e => {
-    console.log("sdfdsfdsf: ", e);
-    // for (const f of e.features) {
-    //   draw.delete(f.id);
-    // }
-    // setFeatures(currFeatures => {
-    //   const newFeatures = {...currFeatures};
-    //   for (const f of e.features) {
-    //     delete newFeatures[f.id];
-    //   }
-    //   return newFeatures;
-    // });
-  }, []);
+  const onDelete = (e) => {
+    // setIsModalOpen(true);
+    setSelectedFeature(e.features);
+    handleDelete(e);
+  };
+
+  const handleDelete = (e) => {
+    // const selectedFeature = drawRef.current.getSelectedIds();
+    for (const f of e.features) {
+      drawRef.current.delete(f.id);
+    }
+    const allBoundaries = drawRef.current.getAll();
+    setSplittedBoundaries(allBoundaries.features);
+    setIsModalOpen(false);
+    message.success("Boundary deleted successfully.");
+  }
+
+  const handleCancel = () => {
+    setIsModalOpen(false);
+    setSelectedFeature([]);
+  };
   
   useEffect(() => {
     if (!splittedBoundaries.length) {
@@ -154,12 +258,15 @@ export default function App() {
     }
   }, []);
 
-  // console.log("mapRef: ", mapRef.current);
+  const onReset = () => {
+    // drawRef.current.deleteAll();
+    setSplittedBoundaries([]);
+  }
 
   useEffect(() => {
     if (!allData) return;
 
-    mapRef.current.addControl(draw, "top-left");
+    mapRef.current.addControl(drawRef.current, "top-left");
 
     mapRef.current.on('draw.create', onCreate);
     mapRef.current.on('draw.delete', onDelete);
@@ -227,51 +334,10 @@ export default function App() {
             features: splittedBoundaries,
           }}
         >
-          <Layer
-            id="split-layer"
-            type="fill"
-            paint={{
-              'fill-color': [
-                'match',
-                ['get', 'id'],   // Dynamic styling based on 'category' property
-                'upper', '#000',     // Green for parks
-                'lower', '#000',    // Blue for water
-                '#000'
-              ],
-              'fill-opacity': 0.6
-            }}
-          />
-          <Layer
-            id="splitted-boundary-outline"
-            type="line"
-            paint={{
-              "line-color": "#fff",
-              "line-width": 3
-            }}
-          />
         </Source>
       )}
       <NavigationControl position="top-left" />
-      {/* {
-        allData ? (
-          <DrawControl
-            // key={JSON.stringify(splittedBoundaries)}
-            position="top-left"
-            displayControlsDefault={false}
-            controls={{
-              line_string: true,
-              trash: true,
-              zoom_in: true,
-            }}
-            onCreate={onUpdate}
-            onUpdate={onUpdate}
-            onDelete={onDelete}
-            onSplit={onSplit}
-            splittedBoundaries={splittedBoundaries}
-            allData={allData.features}
-          />
-        ) : null
-      } */}
+
       {hoverInfo && (
         <div className="tooltip" style={{left: hoverInfo.x, top: hoverInfo.y}}>
           <div>Name: {hoverInfo.feature.properties.name}</div>
@@ -305,6 +371,20 @@ export default function App() {
       <SelectionComponent
         handleLoadMap={handleLoadMap}
       />
+
+      <Modal
+        title="Are you sure you want to delete this sector?"
+        open={isModalOpen}
+        onOk={handleDelete}
+        onCancel={handleCancel}
+      />
+
+      {splittedBoundaries.length > 0 && (
+        <ResetControl
+          onReset={onReset}
+          draw={drawRef.current}
+        />
+      )}
     </Map>
   );
 }
